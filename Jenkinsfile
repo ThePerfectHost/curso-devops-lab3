@@ -108,7 +108,6 @@ pipeline {
                 }
             }
         }
-        /* ---- COMENTADO TEMPORALMENTE HASTA ACTIVAR KUBERNETES ----
         stage("CD - Despliegue continuo en develop"){
             agent {
                 docker {
@@ -130,6 +129,5 @@ pipeline {
                 }
             }
         }
-        -------------------------------------------------------------- */
     }
 }
