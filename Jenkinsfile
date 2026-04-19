@@ -1,5 +1,4 @@
 def tagAndPush(String localImage, String repo, String registry, String credential) {
-
     docker.withRegistry(registry, credential) {
         sh "docker tag ${localImage} ${repo}:latest"
         sh "docker tag ${localImage} ${repo}:${env.BUILD_NUMBER}"
@@ -8,20 +7,20 @@ def tagAndPush(String localImage, String repo, String registry, String credentia
         sh "docker push ${repo}:${env.BUILD_NUMBER}"
         sh "docker push ${repo}:${env.APP_SEMANTIC_VERSION}"
     }
-
 }
 
 pipeline {
     agent any
 
     environment {
-        IMAGE_NAME = "curso-devops-lab3"
-        DH_REPO    = "csotodocker/curso-devops-lab3"
-        GHCR_REPO  = "ghcr.io/theperfecthost/curso-devops-lab3"
+        IMAGE_NAME     = "curso-devops-lab3"
+        DH_REPO        = "csotodocker/curso-devops-lab3"
+        GHCR_REPO      = "ghcr.io/theperfecthost/curso-devops-lab3"
         K8S_NAMESPACE  = "csoto"
         K8S_DEPLOYMENT = "curso-devops-lab3-deployment"
         K8S_CONTAINER  = "contenedor-curso-devops"
     }
+
     stages {
         stage("Integracion continua") {
             agent {
@@ -67,6 +66,7 @@ pipeline {
                 }
             }
         }
+        
         stage("Quality Assurance"){
             agent {
                 docker {
@@ -86,7 +86,7 @@ pipeline {
                 stage('validacion quality gate'){
                     steps{
                         script{
-                            def  qualityGate = waitForQualityGate()
+                            def qualityGate = waitForQualityGate()
                             if(qualityGate.status != 'OK'){
                                 error "La puerta de calidad ha fallado: ${qualityGate.status}"
                             }
@@ -95,20 +95,29 @@ pipeline {
                 }
             }
         }
+        
         stage("CD de la aplicacion - build dockerfile") {
+            // MEJORA 1: Solo construye y empuja imágenes si estamos en develop (o main)
+            when {
+                branch 'develop'
+            }
             steps {
                 sh "docker build -t ${env.IMAGE_NAME} ."
                 script {
                     if (!env.APP_SEMANTIC_VERSION?.trim()) {
                         error("APP_SEMANTIC_VERSION no definida en el stage anterior")
                     }
-                    
                     tagAndPush(env.IMAGE_NAME, env.DH_REPO, "https://index.docker.io/v1/", "credencial-dh")
                     tagAndPush(env.IMAGE_NAME, env.GHCR_REPO, "https://ghcr.io", "credencial-gh")
                 }
             }
         }
+        
         stage("CD - Despliegue continuo en develop"){
+            // MEJORA 1: Protección de rama para el despliegue
+            when {
+                branch 'develop'
+            }
             agent {
                 docker {
                     image 'alpine/k8s:1.34.6'
@@ -124,10 +133,27 @@ pipeline {
                 withKubeConfig([credentialsId: 'credencial-k8']) {
                     sh """
                         kubectl -n ${env.K8S_NAMESPACE} set image deployment/${env.K8S_DEPLOYMENT} ${env.K8S_CONTAINER}=${env.DH_REPO}:${env.BUILD_NUMBER}
-                        kubectl -n ${env.K8S_NAMESPACE} rollout status deployment/${env.K8S_DEPLOYMENT}
                     """
+                    // MEJORA 2: Evitar que Jenkins se quede pegado si Kubernetes falla al levantar el pod
+                    timeout(time: 3, unit: 'MINUTES') {
+                        sh "kubectl -n ${env.K8S_NAMESPACE} rollout status deployment/${env.K8S_DEPLOYMENT}"
+                    }
                 }
             }
+        }
+    }
+
+    // MEJORA 3: Limpieza y control final
+    post {
+        always {
+            // Limpia el workspace para no saturar el disco del servidor Jenkins
+            cleanWs()
+        }
+        success {
+            echo ":) Pipeline ejecutado con éxito. Despliegue finalizado correctamente."
+        }
+        failure {
+            echo ":( El pipeline ha fallado. Revise los logs de ejecución."
         }
     }
 }

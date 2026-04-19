@@ -1,0 +1,73 @@
+---
+# 2.a: Creación namespace usando inicial y apellido
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: csoto
+---
+# 2.c: Configmap para utilizar como variable de entorno USER_KEY
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lab3-config
+  namespace: csoto
+data:
+  USER_KEY: "admin_devops_csoto"
+---
+# 2.d: Secret para utilizar como variable de entorno para BD_PASSWORD
+apiVersion: v1
+kind: Secret
+metadata:
+  name: lab3-secret
+  namespace: csoto
+type: Opaque
+stringData:
+  BD_PASSWORD: "PasswordSegura123!"
+---
+# 2.b: Deployment de aplicación con 3 réplicas utilizando imagen de github
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: curso-devops-lab3-deployment
+  namespace: csoto
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: contenedor-curso-devops
+  template:
+    metadata:
+      labels:
+        app: contenedor-curso-devops
+    spec:
+      containers:
+      - name: contenedor-curso-devops
+        image: ghcr.io/theperfecthost/curso-devops-lab3:latest
+        ports:
+        - containerPort: 3000
+        env:
+        - name: USER_KEY
+          valueFrom:
+            configMapKeyRef:
+              name: lab3-config
+              key: USER_KEY
+        - name: BD_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: lab3-secret
+              key: BD_PASSWORD
+---
+# 2.b (Parte 2): Servicio de aplicación
+apiVersion: v1
+kind: Service
+metadata:
+  name: curso-devops-lab3-service
+  namespace: csoto
+spec:
+  type: NodePort
+  selector:
+    app: contenedor-curso-devops
+  ports:
+    - port: 8080
+      targetPort: 3000
+      nodePort: 30080
